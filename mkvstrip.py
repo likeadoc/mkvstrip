@@ -190,6 +190,7 @@ class MKVFile(object):
         self.path = path
                
         media_info = MediaInfo.parse(path)
+        self.general_tracks = media_info.general_tracks
         self.video_tracks = media_info.video_tracks
         self.audio_tracks = media_info.audio_tracks
         self.subtitle_tracks = media_info.text_tracks
@@ -332,7 +333,7 @@ class MKVFile(object):
             if track.title:
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "name"])
             if track.language:
-               command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "language"])
+                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "language"])
         
         for track in self.audio_tracks:
             if track.title != track.commercial_name:
@@ -341,6 +342,17 @@ class MKVFile(object):
         for track in self.subtitle_tracks:
             if track.title != "{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else ""):
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "")))])
+        
+        for track in self.general_tracks:
+            if track.attachments:
+                attachment_list = track.attachments.split(" / ")
+                for attachment in attachment_list:
+                    command.extend(["--delete-attachment", ":".join(("name", attachment))])
+        
+        command.extend(["--delete-track-statistics-tags"])
+
+        command.extend(["-c", ""])
+        
         if len(command) >= 3:
             if edit_file(command):
                print("Cleaned up {} successfully, moving on".format(self.path))
