@@ -320,7 +320,7 @@ class MKVFile(object):
         else:
             if os.path.exists(tmp_file):
                 os.remove(tmp_file)
-        raise Exception("Remuxing {} failed, but the file on disk was not changed".format(self.path))   
+                raise Exception("Remuxing failed, but the file on disk should be OK.")   
     
     def cleanup(self):
         command = [cli_args.mkvpropedit, self.path]
@@ -344,8 +344,6 @@ class MKVFile(object):
         if len(command) >= 3:
             if edit_file(command):
                print("Cleaned up {} successfully, moving on".format(self.path))
-            else:
-                raise Exception("Cleaning up {} failed".format(self.path))
         else:
             print("Nothing to do here,moving on")
         
