@@ -100,8 +100,8 @@ def edit_file(command):
     """
     # Skip editing if in dry run mode
     if cli_args.dry_run:
-        print("Dry run 100%")
         print(command)
+        print("Dry run 100%")
         return False
 
     sys.stdout.write("Progress 0%")
@@ -352,7 +352,7 @@ class MKVFile(object):
         command.extend(["--delete-track-statistics-tags"])
 
         command.extend(["-c", ""])
-        
+
         if len(command) >= 3:
             if edit_file(command):
                print("Cleaned up {} successfully, moving on".format(self.path))
