@@ -199,7 +199,8 @@ class MKVFile(object):
         self.streamorder_audio = []
         self.streamorder_subtitles = []
         self.track_order = []
-        self.subtitles_forced =[]
+        self.subtitles_forced = []
+        self.streams_misaligned = False
 
     @lru_cache()
     def _filtered_tracks(self, track_type):
@@ -265,12 +266,12 @@ class MKVFile(object):
         
         for video, audio, subtitles in itertools.product(self.streamorder_video, self.streamorder_audio, self.streamorder_subtitles):
             if not video < audio < subtitles:
-                streams_misaligned = True
+                self.streams_misaligned = True
                 print("Misaligned streams detected")
                 break
 
         has_something_to_remove = audio_to_remove or sub_to_remove
-        if has_something_to_remove or streams_misaligned:
+        if has_something_to_remove or self.streams_misaligned:
             return True
         else:
             return False
