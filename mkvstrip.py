@@ -264,11 +264,25 @@ class MKVFile(object):
         for track in self.subtitle_tracks:
             self.streamorder_subtitles.append(track.streamorder)
         
-        for video, audio, subtitles in itertools.product(self.streamorder_video, self.streamorder_audio, self.streamorder_subtitles):
-            if not video < audio < subtitles:
+        for video, audio in itertools.product(self.streamorder_video, self.streamorder_audio):
+            if video > audio:
                 self.streams_misaligned = True
                 print("Misaligned streams detected")
                 break
+        
+        if not self.streams_misaligned:
+            for video, subtitles in itertools.product(self.streamorder_video, self.streamorder_subtitles):
+                if video > subtitles:
+                    self.streams_misaligned = True
+                    print("Misaligned streams detected")
+                    break
+        
+        if not self.streams_misaligned:
+            for audio, subtitles in itertools.product(self.streamorder_audio, self.streamorder_subtitles):
+                if audio > subtitles:
+                    self.streams_misaligned = True
+                    print("Misaligned streams detected")
+                    break
 
         has_something_to_remove = audio_to_remove or sub_to_remove
         if has_something_to_remove or self.streams_misaligned:
@@ -294,8 +308,8 @@ class MKVFile(object):
         command.extend(["--no-track-tags"])
         
         for track in self.video_tracks:
-            if track.title:
-                command.extend(["--track-name", ":".join((str(track.streamorder),""))])
+            command.extend(["--track-name", ":".join((str(track.streamorder)," "))])
+            command.extend(["--language", ":".join((str(track.streamorder),"und"))])
             self.track_order.extend(str(track.streamorder))
                 
         # Iterate over all tracks and mark which tracks are to be kept
@@ -373,10 +387,8 @@ class MKVFile(object):
         
 
         for track in self.video_tracks:
-            if track.title:
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "name"])
-            if track.language:
-                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "language"])
+                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "language=und"])
         
         for track in self.audio_tracks:
             if track.title != track.commercial_name:
