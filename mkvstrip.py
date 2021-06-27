@@ -25,6 +25,7 @@ from operator import itemgetter
 from pymediainfo import MediaInfo
 import subprocess
 import argparse
+import itertools
 import time
 import json
 import sys
@@ -194,6 +195,10 @@ class MKVFile(object):
         self.video_tracks = media_info.video_tracks
         self.audio_tracks = media_info.audio_tracks
         self.subtitle_tracks = media_info.text_tracks
+        self.streamorder_video = []
+        self.streamorder_audio = []
+        self.streamorder_subtitles = []
+        self.track_order = []
         self.subtitles_forced =[]
 
     @lru_cache()
@@ -248,9 +253,24 @@ class MKVFile(object):
 
         audio_to_keep, audio_to_remove = self._filtered_tracks("Audio")
         sub_to_keep, sub_to_remove = self._filtered_tracks("Text")
+              
+        for track in self.video_tracks:
+            self.streamorder_video.append(track.streamorder)
+
+        for track in self.audio_tracks:
+            self.streamorder_audio.append(track.streamorder)
+
+        for track in self.subtitle_tracks:
+            self.streamorder_subtitles.append(track.streamorder)
+        
+        for video, audio, subtitles in itertools.product(self.streamorder_video, self.streamorder_audio, self.streamorder_subtitles):
+            if not video < audio < subtitles:
+                streams_misaligned = True
+                print("Misaligned streams detected")
+                break
 
         has_something_to_remove = audio_to_remove or sub_to_remove
-        if has_something_to_remove:
+        if has_something_to_remove or streams_misaligned:
             return True
         else:
             return False
@@ -275,14 +295,34 @@ class MKVFile(object):
         for track in self.video_tracks:
             if track.title:
                 command.extend(["--track-name", ":".join((str(track.streamorder),""))])
-
+            self.track_order.extend(str(track.streamorder))
+                
         # Iterate over all tracks and mark which tracks are to be kept
         for track_type in ("Audio", "Text"):
             keep, remove = self._filtered_tracks(track_type)
-
+            sorted_keep =[]
             keep_ids = []
+            
+            if track_type == "Audio":
+                for lang in cli_args.language:
+                    internal_keep = []
+                    for track in keep:
+                        if track.language == lang:
+                            internal_keep.append(track)
+                    internal_keep.sort(key=lambda x: x.stream_size, reverse=True)
+                    sorted_keep.extend(internal_keep)
+            
+            if track_type == "Text":
+                for lang in cli_args.sub_language:
+                    internal_keep = []
+                    for track in keep:
+                        if track.language == lang:
+                            internal_keep.append(track)
+                    internal_keep.sort(key=lambda x: x.forced, reverse=True)
+                    sorted_keep.extend(internal_keep)
+
             print("Retaining %s track(s):" % track_type)
-            for count, track in enumerate(keep):
+            for count, track in enumerate(sorted_keep):
                 keep_ids.append(str(track.streamorder))
                 print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
 
@@ -296,23 +336,25 @@ class MKVFile(object):
                 elif track_type == "Text":
                     command.extend(["--track-name", ":".join((str(track.streamorder),"{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "")))])
                 
-
-
             # Set which tracks are to be kept
             if keep_ids and track_type == "Audio":
                 command.extend(["--audio-tracks", ",".join(keep_ids)])
+                self.track_order.extend(keep_ids)
             elif keep_ids and track_type == "Text":
                 command.extend(["--subtitle-tracks", ",".join(keep_ids)])
+                self.track_order.extend(keep_ids)
             elif track_type == "Text" and not keep_ids:
                 command.extend(["--no-subtitles"])
             elif track_type == "Audio" and not keep_ids:
                 command.extend(["--no-audio"])
-
+                 
             print("Removing %s track(s):" % track_type)
             for track in remove:
                 print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
 
             print("----------------------------")
+
+        command.extend(["--track-order", "{1}{0}".format(",0:".join(self.track_order), "0:")])
 
         # Add source mkv file to command and remux
         command.append(self.path)
