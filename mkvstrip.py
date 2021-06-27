@@ -100,11 +100,13 @@ def edit_file(command):
     :rtype: bool
     """
     # Skip editing if in dry run mode
-    if cli_args.dry_run:
+    if cli_args.verbose:
         print(command)
+    
+    if cli_args.dry_run:
         print("Dry run 100%")
         return False
-
+    
     sys.stdout.write("Progress 0%")
     sys.stdout.flush()
 
@@ -299,7 +301,14 @@ class MKVFile(object):
 
         # Output the remuxed file to a temp tile, This will protect
         # the original file from been corrupted if anything goes wrong
-        tmp_file = u"%s.tmp" % self.path
+        if cli_args.tmp_dir:
+           tmp_path_real = os.path.realpath(cli_args.tmp_dir)
+           print(tmp_path_real)
+           tmp_file = u"%s/%s.tmp" % (tmp_path_real, self.filename)
+           print(tmp_file)
+        else:    
+            tmp_file = u"%s.tmp" % self.path
+        
         command.append(tmp_file)
         
         command.extend(["--title", self.filename[:(self.filename.index("[")-1)]])
@@ -426,13 +435,14 @@ def main(params=None):
     # Create Parser to parse the required arguments
     parser = argparse.ArgumentParser(description="Strips unwanted tracks from MKV files and cleans them up.")
     parser.add_argument("paths", nargs='+', help="Path to media file(s).")
-    parser.add_argument("--mediainfo", action="store", default=MEDIAINFO_DEFAULT, metavar="path", help="The path to the mediainfo binary.")
-    parser.add_argument("--mkvmerge", action="store", default=MKVMERGE_DEFAULT, metavar="path", help="The path to the mkvmerge binary.")
-    parser.add_argument("--mkvpropedit", action="store", default=MKVPROPEDIT_DEFAULT, metavar="path", help="The path to the mkvpropedit binary.")
+    parser.add_argument("--mediainfo", action="store", default=MEDIAINFO_DEFAULT, metavar="path", help="Path to the mediainfo binary.")
+    parser.add_argument("--mkvmerge", action="store", default=MKVMERGE_DEFAULT, metavar="path", help="Path to the mkvmerge binary.")
+    parser.add_argument("--mkvpropedit", action="store", default=MKVPROPEDIT_DEFAULT, metavar="path", help="Path to the mkvpropedit binary.")
+    parser.add_argument("--tmp-dir", action="store", default=None, metavar="path", help="Custom Path for temporary files, if it does not exist it is created")
     parser.add_argument("-l", "--language",  action=AppendSplitter, default=None, required=True, metavar="language", help="Comma-separated list of ISO 639-1 compliant language codes defining the audio languages to retain.")
     parser.add_argument("-s", "--sub-language", action=AppendSplitter, default=None, required=True, metavar="language", help="Comma-separated list of ISO 639-1 compliant language codes defining the subtitle languages to retain.")
     parser.add_argument("-f", "--sub-forced", action="store_true", default=False, help="When enabled only forced subtitles are kept.")
-    parser.add_argument("-t", "--dry-run", action="store_true", default=False, help="Dry run for testing.")
+    parser.add_argument("-d", "--dry-run", action="store_true", default=False, help="Dry run for testing.")
     parser.add_argument("-v", "--verbose", action="store_true", default=False, help="Verbose output.")
 
     # Parse the list of given arguments
