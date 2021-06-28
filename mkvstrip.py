@@ -37,7 +37,7 @@ cli_args = None
 MKVMERGE_DEFAULT = "mkvmerge"
 MEDIAINFO_DEFAULT = "mediainfo"
 MKVPROPEDIT_DEFAULT = "mkvpropedit"
-
+MIN_AGE_DEFAULT = 0
 
 def catch_interrupt(func):
     """Decorator to catch Keyboard Interrupts and silently exit."""
@@ -63,7 +63,10 @@ def walk_directory(path):
     movie_list = []
     if os.path.isfile(path):
         if path.lower().endswith(".mkv"):
-            movie_list.append(path)
+            if os.stat(path).st_mtime <= time.time() - cli_args.min_age * 3600:
+                movie_list.append(path)
+            else:
+                print("Ignoring: {} - File does not meet minimal age criteria.".format(path))
         else:
             raise ValueError("Given file is not a valid mkv file: '%s'" % path)
 
@@ -83,10 +86,20 @@ def walk_directory(path):
         for dirpath, filenames in sorted(dirs, key=itemgetter(0)):
             for filename in filenames:
                 fullpath = os.path.join(dirpath, filename)
-                movie_list.append(fullpath)
+                if os.stat(fullpath).st_mtime <= time.time() - cli_args.min_age * 3600:
+                    movie_list.append(fullpath)
+                else:
+                    print("Ignoring: {} - File does not meet minimal age criteria.".format(fullpath))
+                
     else:
         raise FileNotFoundError("[Errno 2] No such file or directory: '%s'" % path)
-
+    
+    print("\nFiles to process:")
+    print("============================")
+    for path in movie_list:
+        print(path)
+    print("============================")
+    
     return movie_list
 
 
@@ -105,10 +118,11 @@ def edit_file(command):
     
     if cli_args.dry_run:
         print("Dry run 100%")
+        print("============================")
         return False
-    
-    sys.stdout.write("Progress 0%")
-    sys.stdout.flush()
+    if command[0] == cli_args.mkvmerge:
+        sys.stdout.write("Progress 0%")
+        sys.stdout.flush()
 
     try:
         # Call subprocess command to edit file
@@ -119,12 +133,13 @@ def edit_file(command):
         while retcode is None:
             # Sleep for a quarter second and then dislay progress
             time.sleep(.25)
-            for line in iter(process.stdout.readline, ""):
-                if "progress" in line.lower():
-                    sys.stdout.write("\r%s" % line.strip())
-                    sys.stdout.flush()
+            if command[0] == cli_args.mkvmerge:
+                for line in iter(process.stdout.readline, ""):
+                    if "progress" in line.lower():
+                        sys.stdout.write("\r%s" % line.strip())
+                        sys.stdout.flush()
 
-            # Check return code of subprocess
+                # Check return code of subprocess
             retcode = process.poll()
 
         # Check if return code indicates an error
@@ -133,10 +148,12 @@ def edit_file(command):
             raise subprocess.CalledProcessError(retcode, command, output=process.stdout)
 
     except subprocess.CalledProcessError as e:
-        print("Remux failed!")
+        print("Edit failed!")
         print(e)
         return False
     else:
+        print("Edited file successfully")
+        print("============================")
         return True
 
 
@@ -297,8 +314,8 @@ class MKVFile(object):
         """Remove the unwanted tracks."""
 
         command = [cli_args.mkvmerge, "--output"]
-        print("\nRemuxing:", self.filename)
-        print("============================")
+        print("Remuxing:", self.filename)
+        print("----------------------------")
 
         # Output the remuxed file to a temp tile, This will protect
         # the original file from been corrupted if anything goes wrong
@@ -393,31 +410,39 @@ class MKVFile(object):
     
     def cleanup(self):
         command = [cli_args.mkvpropedit, self.path]
-        print("\nCleaning Up:", self.filename)
-        print("============================")
+        print("Cleaning Up:", self.filename)
+        print("----------------------------")
         
-
         for track in self.video_tracks:
             if track.title:
+                print("Removing title for Track #{} (video)".format(str(track.streamorder)))
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "name"])
             if track.language:
+                print("Removing language for Track #{} (video)".format(str(track.streamorder)))
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "language=und"])
         
         for track in self.audio_tracks:
             if track.title != track.commercial_name:
+                print("Setting track title for Track #{} (audio)".format(str(track.streamorder)))
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name",track.commercial_name))])
         
         for track in self.subtitle_tracks:
             if track.title != "{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else ""):
+                print("Setting track title for Track #{} (subtitle)".format(str(track.streamorder)))
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "")))])
         
         for track in self.general_tracks:
+            if track.title != self.filename[:(self.filename.index("[")-1)]:
+                print("Setting title")
+                command.extend(["--edit", "info", "--set", "title={}".format(self.filename[:(self.filename.index("[")-1)])])
             if track.attachments:
+                print("Removing attachments")
                 attachment_list = track.attachments.split(" / ")
                 for attachment in attachment_list:
                     command.extend(["--delete-attachment", ":".join(("name", attachment))])
         
         if self.menu_tracks:
+            print("Removing chapters")
             command.extend(["-c", ""])
             
         
@@ -432,14 +457,18 @@ class MKVFile(object):
             break
 
         if track_statistics == True:
+            print("Removing track statistics tags")
             command.extend(["--delete-track-statistics-tags"])
 
 
         if len(command) >= 3:
-            if edit_file(command):
-               print("Cleaned up {} successfully".format(self.path))
+            print("----------------------------")
+            edit_file(command)              
         else:
             print("Nothing to do here")
+            print("============================")
+        
+        
         
 
 @catch_interrupt
@@ -460,6 +489,7 @@ def main(params=None):
     parser.add_argument("-l", "--language",  action=AppendSplitter, default=None, required=True, metavar="language", help="Comma-separated list of ISO 639-1 compliant language codes defining the audio languages to retain.")
     parser.add_argument("-s", "--sub-language", action=AppendSplitter, default=None, required=True, metavar="language", help="Comma-separated list of ISO 639-1 compliant language codes defining the subtitle languages to retain.")
     parser.add_argument("-f", "--sub-forced", action="store_true", default=False, help="When enabled only forced subtitles are kept.")
+    parser.add_argument("--min-age", action="store", default=MIN_AGE_DEFAULT,type=int, help="Specifies minimal age in hours (int) for files to get parsed")
     parser.add_argument("-d", "--dry-run", action="store_true", default=False, help="Dry run for testing.")
     parser.add_argument("-v", "--verbose", action="store_true", default=False, help="Verbose output.")
 
@@ -472,8 +502,8 @@ def main(params=None):
     for path in cli_args.paths:
         path = os.path.realpath(path)
         for mkv_file in walk_directory(path):
-            if cli_args.verbose:
-                print("Checking", mkv_file)
+            print("\n============================")
+            print("File:", mkv_file)
             mkv_obj = MKVFile(mkv_file)
             if mkv_obj.remux_required:
                 mkv_obj.remove_tracks()
