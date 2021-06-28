@@ -197,6 +197,7 @@ class MKVFile(object):
         self.video_tracks = media_info.video_tracks
         self.audio_tracks = media_info.audio_tracks
         self.subtitle_tracks = media_info.text_tracks
+        self.menu_tracks = media_info.menu_tracks
         self.streamorder_video = []
         self.streamorder_audio = []
         self.streamorder_subtitles = []
@@ -315,6 +316,7 @@ class MKVFile(object):
         command.extend(["--no-chapters"])
         command.extend(["--no-attachments"])
         command.extend(["--no-track-tags"])
+        command.extend(["--disable-track-statistics-tags"])
         
         for track in self.video_tracks:
             command.extend(["--track-name", ":".join((str(track.streamorder)," "))])
@@ -396,7 +398,9 @@ class MKVFile(object):
         
 
         for track in self.video_tracks:
+            if track.title:
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--delete", "name"])
+            if track.language:
                 command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "language=und"])
         
         for track in self.audio_tracks:
@@ -413,15 +417,29 @@ class MKVFile(object):
                 for attachment in attachment_list:
                     command.extend(["--delete-attachment", ":".join(("name", attachment))])
         
-        command.extend(["--delete-track-statistics-tags"])
+        if self.menu_tracks:
+            command.extend(["-c", ""])
+            
+        
+        track_statistics = False 
+        while track_statistics == False:
+            for track in self.video_tracks:
+                if track.duration_source != "General_Duration" and track.framecount_source != "General_Duration":
+                    track_statistics = True
+            for track in self.audio_tracks:
+                if track.duration_source != "General_Duration" or track.samplingcount_source != "General_Duration":
+                    track_statistics = True
+            break
 
-        command.extend(["-c", ""])
+        if track_statistics == True:
+            command.extend(["--delete-track-statistics-tags"])
+
 
         if len(command) >= 3:
             if edit_file(command):
-               print("Cleaned up {} successfully, moving on".format(self.path))
+               print("Cleaned up {} successfully".format(self.path))
         else:
-            print("Nothing to do here,moving on")
+            print("Nothing to do here")
         
 
 @catch_interrupt
