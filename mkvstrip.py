@@ -427,7 +427,7 @@ class MKVFile(object):
                 if track.duration_source != "General_Duration" and track.framecount_source != "General_Duration":
                     track_statistics = True
             for track in self.audio_tracks:
-                if track.duration_source != "General_Duration" or track.samplingcount_source != "General_Duration":
+                if track.duration_source != "General_Duration" and track.samplingcount_source != "General_Duration":
                     track_statistics = True
             break
 
