@@ -64,10 +64,13 @@ def walk_directory(path):
     movie_list = []
     if os.path.isfile(path):
         if path.lower().endswith(".mkv"):
-            if os.stat(path).st_mtime <= time.time() - cli_args.min_age * 3600:
-                movie_list.append(path)
+            if not "[edited]" in path:
+                if os.stat(path).st_mtime <= time.time() - cli_args.min_age * 3600:
+                    movie_list.append(path)
+                else:
+                    print("Ignoring: {} - File does not meet minimal age criteria.".format(path))
             else:
-                print("Ignoring: {} - File does not meet minimal age criteria.".format(path))
+                print("Ignoring: {} - File has already been edited.".format(path))
         else:
             raise ValueError("Given file is not a valid mkv file: '%s'" % path)
 
@@ -87,11 +90,13 @@ def walk_directory(path):
         for dirpath, filenames in sorted(dirs, key=itemgetter(0)):
             for filename in filenames:
                 fullpath = os.path.join(dirpath, filename)
-                if os.stat(fullpath).st_mtime <= time.time() - cli_args.min_age * 3600:
-                    movie_list.append(fullpath)
+                if not "[edited]" in path:
+                    if os.stat(fullpath).st_mtime <= time.time() - cli_args.min_age * 3600:
+                        movie_list.append(fullpath)
+                    else:
+                        print("Ignoring: {} - File does not meet minimal age criteria.".format(fullpath))
                 else:
-                    print("Ignoring: {} - File does not meet minimal age criteria.".format(fullpath))
-                
+                    print("Ignoring: {} - File has already been edited.".format(path))
     else:
         raise FileNotFoundError("[Errno 2] No such file or directory: '%s'" % path)
     
@@ -171,17 +176,23 @@ def replace_file(tmp_file, org_file):
     :param str tmp_file: The temporary mkv file
     :param str org_file: The original mkv file to replace.
     """
+    edit_file = "{}[edited].mkv".format(org_file[:-4])
+    
     # Preserve timestamp
     stat = os.stat(org_file)
     os.utime(tmp_file, (stat.st_atime, stat.st_mtime))
 
     # Overwrite original file
     try:
-        os.unlink(org_file)
-        os.rename(tmp_file, org_file)
+        if org_file == tmp_file:
+            os.rename(tmp_file, edit_file)
+        else:
+            os.unlink(org_file)
+            os.rename(tmp_file, edit_file)
     except EnvironmentError as e:
-        os.unlink(tmp_file)
-        print("Renaming failed: %s => %s" % (tmp_file, org_file))
+        if not org_file == tmp_file:
+            os.unlink(tmp_file)
+        print("Renaming failed: %s => %s" % (tmp_file, edit_file))
         print(e)
 
 
@@ -385,16 +396,26 @@ class MKVFile(object):
                     sorted_keep.extend(internal_keep)
             
             print("Extracting %s track(s):" % track_type)
-            counter1 =0
-            counter2 = 0
-            for track in extract:
-                if track.forced == "Yes":
-                    extract_command.extend([":".join((str(track.streamorder),"{}.{}{}{}{}.srt".format(self.path[0:-4], track.language, ".forced","" if counter1 == 0 else ".","" if counter1 == 0 else str(counter1))))])
-                    counter1 += 1
-                if track.forced == "No":
-                    extract_command.extend([":".join((str(track.streamorder),"{}.{}{}{}.srt".format(self.path[0:-4], track.language,"" if counter2 == 0 else ".","" if counter2 == 0 else str(counter2))))])
-                    counter2 += 1
-                print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
+            if track_type == "Text":
+                forced_sub = False
+                sdh_sub = False
+                sub_counter = 0
+                for track in extract:
+                    while True:
+                        if track.forced == "Yes" and not forced_sub:
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}.{}{}.srt".format(self.path[0:-4], "[edited]", track.language, ".forced")))])
+                            forced_sub = True
+                            break
+                        elif track.title and "sdh" in track.title.lower() and not sdh_sub:
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}.{}{}.srt".format(self.path[0:-4], "[edited]", track.language, ".hi")))])
+                            sdh_sub = True
+                            break
+                        else:
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}.{}{}{}.srt".format(self.path[0:-4], "[edited]", track.language,"" if sub_counter == 0 else ".","" if sub_counter == 0 else str(sub_counter))))])
+                            sub_counter += 1
+                            break
+                
+                    print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
 
             print("Retaining %s track(s):" % track_type)
             for count, track in enumerate(sorted_keep):
@@ -409,7 +430,7 @@ class MKVFile(object):
                     command.extend(["--track-name", ":".join((str(track.streamorder),track.commercial_name))])
                 
                 elif track_type == "Text":
-                    command.extend(["--track-name", ":".join((str(track.streamorder),"{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "")))])
+                    command.extend(["--track-name", ":".join((str(track.streamorder),"{}{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "", " [SDH]" if track.title and "sdh" in track.title.lower()  else "")))])
                 
             # Set which tracks are to be kept
             if keep_ids and track_type == "Audio":
@@ -463,7 +484,7 @@ class MKVFile(object):
         for track in self.subtitle_tracks:
             if track.title != "{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else ""):
                 print("Setting track title for Track #{} (subtitle)".format(str(track.streamorder)))
-                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "")))])
+                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "", " [SDH]" if track.title and "sdh" in track.title.lower()  else "")))])
         
         for track in self.general_tracks:
             if track.title != self.filename[:(self.filename.index("[")-1)]:
@@ -497,7 +518,9 @@ class MKVFile(object):
 
         if len(command) >= 3:
             print("----------------------------")
-            edit_file(command)              
+            if edit_file(command):
+                replace_file(self.path, self.path)
+
         else:
             print("Nothing to do here")
             print("============================")
