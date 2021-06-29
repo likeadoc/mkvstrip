@@ -90,13 +90,13 @@ def walk_directory(path):
         for dirpath, filenames in sorted(dirs, key=itemgetter(0)):
             for filename in filenames:
                 fullpath = os.path.join(dirpath, filename)
-                if not "[edited]" in path:
+                if not "[edited]" in fullpath:
                     if os.stat(fullpath).st_mtime <= time.time() - cli_args.min_age * 3600:
                         movie_list.append(fullpath)
                     else:
                         print("Ignoring: {} - File does not meet minimal age criteria.".format(fullpath))
                 else:
-                    print("Ignoring: {} - File has already been edited.".format(path))
+                    print("Ignoring: {} - File has already been edited.".format(fullpath))
     else:
         raise FileNotFoundError("[Errno 2] No such file or directory: '%s'" % path)
     
