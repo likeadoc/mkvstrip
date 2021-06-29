@@ -34,8 +34,9 @@ import os
 # Global parser namespace
 cli_args = None
 
-MKVMERGE_DEFAULT = "mkvmerge"
 MEDIAINFO_DEFAULT = "mediainfo"
+MKVEXTRACT_DEFAULT = "mkvextract"
+MKVMERGE_DEFAULT = "mkvmerge"
 MKVPROPEDIT_DEFAULT = "mkvpropedit"
 MIN_AGE_DEFAULT = 0
 
@@ -114,13 +115,16 @@ def edit_file(command):
     """
     # Skip editing if in dry run mode
     if cli_args.verbose:
+        print("\nCommand:")
         print(command)
     
     if cli_args.dry_run:
-        print("Dry run 100%")
-        print("============================")
+        if command[0] != cli_args.mkvextract:
+            print("Dry run 100%")
+            print("============================")
         return False
-    if command[0] == cli_args.mkvmerge:
+    
+    if command[0] != cli_args.mkvpropedit:
         sys.stdout.write("Progress 0%")
         sys.stdout.flush()
 
@@ -133,7 +137,7 @@ def edit_file(command):
         while retcode is None:
             # Sleep for a quarter second and then dislay progress
             time.sleep(.25)
-            if command[0] == cli_args.mkvmerge:
+            if command[0] != cli_args.mkvpropedit:
                 for line in iter(process.stdout.readline, ""):
                     if "progress" in line.lower():
                         sys.stdout.write("\r%s" % line.strip())
@@ -148,12 +152,15 @@ def edit_file(command):
             raise subprocess.CalledProcessError(retcode, command, output=process.stdout)
 
     except subprocess.CalledProcessError as e:
-        print("Edit failed!")
+        print("Subprocess failed!")
         print(e)
         return False
     else:
-        print("Edited file successfully")
-        print("============================")
+        if command[0] == cli_args.mkvextract:
+            print("Extracted stream(s) succesfully")
+        else:
+            print("Edited file successfully")
+            print("============================")
         return True
 
 
@@ -247,21 +254,33 @@ class MKVFile(object):
         # Lists of track to keep & remove
         remove = []
         keep = []
+        extract = []
         # Iterate over all tracks to find which track to keep or remove
         for track in tracks:
             if track.language in languages_to_keep:
-                # Tracks we want to keep               
-                if cli_args.sub_forced and track_type == "Text":
-                    if track.forced == "Yes":
-                        keep.append(track)
+                # Tracks we want to keep
+                if track_type == "Text":
+                    if track.codec_id == "S_TEXT/UTF8" or track.codec_id == "S_TEXT/ASCII":             
+                        if cli_args.sub_forced:
+                            if track.forced == "Yes":
+                                if cli_args.external_subtitles:
+                                    extract.append(track)
+                                else:
+                                    keep.append(track)
+                            else:
+                                remove.append(track)              
+                        else:
+                            if cli_args.external_subtitles:
+                                extract.append(track)
+                            else:
+                                keep.append(track)
                     else:
-                        remove.append(track)              
+                        remove.append(track)     
                 else:
                     keep.append(track)
             else:
-                # Tracks we want to remove
-                remove.append(track)
-        return keep, remove
+                remove.append(track)        
+        return keep, remove, extract
 
     @property
     def remux_required(self):
@@ -272,8 +291,8 @@ class MKVFile(object):
         :rtype: bool
         """
 
-        audio_to_keep, audio_to_remove = self._filtered_tracks("Audio")
-        sub_to_keep, sub_to_remove = self._filtered_tracks("Text")
+        audio_to_keep, audio_to_remove, audio_to_extract = self._filtered_tracks("Audio")
+        sub_to_keep, sub_to_remove, sub_to_extract = self._filtered_tracks("Text")
               
         for track in self.video_tracks:
             self.streamorder_video.append(track.streamorder)
@@ -304,16 +323,17 @@ class MKVFile(object):
                     print("Misaligned streams detected")
                     break
 
-        has_something_to_remove = audio_to_remove or sub_to_remove
+        has_something_to_remove = audio_to_remove or sub_to_remove or audio_to_extract or sub_to_extract
         if has_something_to_remove or self.streams_misaligned:
             return True
         else:
             return False
 
     def remove_tracks(self):
-        """Remove the unwanted tracks."""
-
+        """Remove/extract the unwanted tracks."""
         command = [cli_args.mkvmerge, "--output"]
+        extract_command = [cli_args.mkvextract, self.path, "tracks"]
+        
         print("Remuxing:", self.filename)
         print("----------------------------")
 
@@ -342,7 +362,7 @@ class MKVFile(object):
                 
         # Iterate over all tracks and mark which tracks are to be kept
         for track_type in ("Audio", "Text"):
-            keep, remove = self._filtered_tracks(track_type)
+            keep, remove, extract = self._filtered_tracks(track_type)
             sorted_keep =[]
             keep_ids = []
             
@@ -363,6 +383,11 @@ class MKVFile(object):
                             internal_keep.append(track)
                     internal_keep.sort(key=lambda x: x.forced, reverse=True)
                     sorted_keep.extend(internal_keep)
+            
+            print("Extracting %s track(s):" % track_type)
+            for track in extract:
+                extract_command.extend([":".join((str(track.streamorder),"{}.{}{}.srt".format(self.path[0:-4], track.language, ".forced" if track.forced == "Yes" else "")))])
+                print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
 
             print("Retaining %s track(s):" % track_type)
             for count, track in enumerate(sorted_keep):
@@ -398,9 +423,11 @@ class MKVFile(object):
             print("----------------------------")
 
         command.extend(["--track-order", "{1}{0}".format(",0:".join(self.track_order), "0:")])
-
-        # Add source mkv file to command and remux
         command.append(self.path)
+        
+        if len(extract_command) >= 4:
+            edit_file(extract_command)
+
         if edit_file(command):
             replace_file(tmp_file, self.path)
         else:
@@ -483,6 +510,7 @@ def main(params=None):
     parser = argparse.ArgumentParser(description="Strips unwanted tracks from MKV files and cleans them up.")
     parser.add_argument("paths", nargs='+', help="Path to media file(s).")
     parser.add_argument("--mediainfo", action="store", default=MEDIAINFO_DEFAULT, metavar="path", help="Path to the mediainfo binary.")
+    parser.add_argument("--mkvextract", action="store", default=MKVEXTRACT_DEFAULT, metavar="path", help="Path to the mkvedit binary.")
     parser.add_argument("--mkvmerge", action="store", default=MKVMERGE_DEFAULT, metavar="path", help="Path to the mkvmerge binary.")
     parser.add_argument("--mkvpropedit", action="store", default=MKVPROPEDIT_DEFAULT, metavar="path", help="Path to the mkvpropedit binary.")
     parser.add_argument("--tmp-dir", action="store", default=None, metavar="path", help="Custom Path for temporary files, if it does not exist it is created")
@@ -490,6 +518,7 @@ def main(params=None):
     parser.add_argument("-s", "--sub-language", action=AppendSplitter, default=None, required=True, metavar="language", help="Comma-separated list of ISO 639-1 compliant language codes defining the subtitle languages to retain.")
     parser.add_argument("-f", "--sub-forced", action="store_true", default=False, help="When enabled only forced subtitles are kept.")
     parser.add_argument("--min-age", action="store", default=MIN_AGE_DEFAULT,type=int, help="Specifies minimal age in hours (int) for files to get parsed")
+    parser.add_argument("-e", "--external-subtitles", action="store_true", default=False, help="Store subtitles externally.")
     parser.add_argument("-d", "--dry-run", action="store_true", default=False, help="Dry run for testing.")
     parser.add_argument("-v", "--verbose", action="store_true", default=False, help="Verbose output.")
 
