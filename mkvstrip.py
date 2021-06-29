@@ -522,7 +522,8 @@ class MKVFile(object):
                 replace_file(self.path, self.path)
 
         else:
-            print("Nothing to do here")
+            replace_file(self.path, self.path)
+            print("Nothing to do here - File renamed")
             print("============================")
         
         
