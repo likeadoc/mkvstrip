@@ -165,7 +165,6 @@ def edit_file(command):
             print("Extracted stream(s) succesfully")
         else:
             print("Edited file successfully")
-            print("============================")
         return True
 
 
@@ -177,18 +176,37 @@ def replace_file(tmp_file, org_file):
     :param str org_file: The original mkv file to replace.
     """
     edit_file = "{}[edited].mkv".format(org_file[:-4])
+    dirpath, filename = os.path.split(org_file)
+    filename_nosuffix = filename[:-4]
     
     # Preserve timestamp
     stat = os.stat(org_file)
     os.utime(tmp_file, (stat.st_atime, stat.st_mtime))
-
+    
+    for file in os.listdir(dirpath):
+            if os.path.isfile(os.path.join(dirpath, file)) and file.lower().endswith(".srt") and file.lower().startswith(filename_nosuffix.lower()) and not "[edited]" in file:
+                title = file[:(file.index("]") + 1)]
+                suffix = file[(file.index("]") + 1):]
+                new_file = "{}[edited]{}".format(title, suffix)
+                try:
+                    os.rename(os.path.join(dirpath, file), os.path.join(dirpath, new_file))
+                    print("Renamed: %s => %s" % (file, new_file))
+                except EnvironmentError as e:
+                    print("Renaming failed: %s => %s" % (file, new_file))
+                    print(e)    
+    
     # Overwrite original file
     try:
         if org_file == tmp_file:
             os.rename(tmp_file, edit_file)
+            print("Renamed: %s => %s" % (tmp_file, edit_file))
+            print("============================")
         else:
             os.unlink(org_file)
+            print("Deleted: %s" % (org_file))
             os.rename(tmp_file, edit_file)
+            print("Renamed: %s => %s" % (tmp_file, edit_file))
+            print("============================")
     except EnvironmentError as e:
         if not org_file == tmp_file:
             os.unlink(tmp_file)
