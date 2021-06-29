@@ -430,7 +430,7 @@ class MKVFile(object):
                     command.extend(["--track-name", ":".join((str(track.streamorder),track.commercial_name))])
                 
                 elif track_type == "Text":
-                    command.extend(["--track-name", ":".join((str(track.streamorder),"{}{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "", " [SDH]" if track.title and "sdh" in track.title.lower()  else "")))])
+                    command.extend(["--track-name", ":".join((str(track.streamorder),"{}{}{}".format(track.other_language[0], " (Forced)" if track.forced == "Yes" else "", " (SDH)" if track.title and "sdh" in track.title.lower()  else "")))])
                 
             # Set which tracks are to be kept
             if keep_ids and track_type == "Audio":
@@ -484,7 +484,7 @@ class MKVFile(object):
         for track in self.subtitle_tracks:
             if track.title != "{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else ""):
                 print("Setting track title for Track #{} (subtitle)".format(str(track.streamorder)))
-                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}{}".format(track.other_language[0], " [Forced]" if track.forced == "Yes" else "", " [SDH]" if track.title and "sdh" in track.title.lower()  else "")))])
+                command.extend(["--edit", ":".join(("track",str(track.track_id))), "--set", "=".join(("name","{}{}{}".format(track.other_language[0], " (Forced)" if track.forced == "Yes" else "", " (SDH)" if track.title and "sdh" in track.title.lower()  else "")))])
         
         for track in self.general_tracks:
             if track.title != self.filename[:(self.filename.index("[")-1)]:
