@@ -385,8 +385,15 @@ class MKVFile(object):
                     sorted_keep.extend(internal_keep)
             
             print("Extracting %s track(s):" % track_type)
+            counter1 =0
+            counter2 = 0
             for track in extract:
-                extract_command.extend([":".join((str(track.streamorder),"{}.{}{}.srt".format(self.path[0:-4], track.language, ".forced" if track.forced == "Yes" else "")))])
+                if track.forced == "Yes":
+                    extract_command.extend([":".join((str(track.streamorder),"{}.{}{}{}{}.srt".format(self.path[0:-4], track.language, ".forced","" if counter1 == 0 else ".","" if counter1 == 0 else str(counter1))))])
+                    counter1 += 1
+                if track.forced == "No":
+                    extract_command.extend([":".join((str(track.streamorder),"{}.{}{}{}.srt".format(self.path[0:-4], track.language,"" if counter2 == 0 else ".","" if counter2 == 0 else str(counter2))))])
+                    counter2 += 1
                 print("   ", "Track #{}: {} - {}".format(track.streamorder, track.language, track.format))
 
             print("Retaining %s track(s):" % track_type)
