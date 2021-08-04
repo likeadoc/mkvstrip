@@ -401,7 +401,7 @@ class MKVFile(object):
                     for track in keep:
                         if track.language == lang:
                             internal_keep.append(track)
-                    internal_keep.sort(key=lambda x: x.stream_size, reverse=True)
+                    internal_keep.sort(key=lambda x: (x.stream_size is not None, x.stream_size), reverse=True)
                     sorted_keep.extend(internal_keep)
             
             if track_type == "Text":
