@@ -423,15 +423,15 @@ class MKVFile(object):
                 for track in extract:
                     while True:
                         if track.forced == "Yes" and not forced_sub:
-                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}.srt".format(self.path[0:self.path.index("]") + 1], "[edited]", self.path[self.path.index("]"):-4], track.language, ".forced")))])
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}.srt".format(self.path[0:(self.path.index("]") + 1)], "[edited]", self.path[(self.path.index("]")+1):-4], track.language, ".forced")))])
                             forced_sub = True
                             break
                         elif track.title and "sdh" in track.title.lower() and not sdh_sub:
-                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}.srt".format(self.path[0:self.path.index("]") + 1], "[edited]", self.path[self.path.index("]"):-4], track.language, ".hi")))])
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}.srt".format(self.path[0:(self.path.index("]") + 1)], "[edited]", self.path[(self.path.index("]")+1):-4], track.language, ".hi")))])
                             sdh_sub = True
                             break
                         else:
-                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}{}.srt".format(self.path[0:self.path.index("]") + 1], "[edited]", self.path[self.path.index("]"):-4], track.language,"" if sub_counter == 0 else ".","" if sub_counter == 0 else str(sub_counter))))])
+                            extract_command.extend([":".join((str(track.streamorder),"{}{}{}.{}{}{}.srt".format(self.path[0:(self.path.index("]") + 1)], "[edited]", self.path[(self.path.index("]")+1):-4], track.language,"" if sub_counter == 0 else ".","" if sub_counter == 0 else str(sub_counter))))])
                             sub_counter += 1
                             break
                 
